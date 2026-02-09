@@ -46,7 +46,8 @@ jobs:
 
       - name: Start infrastructure stack
         run: |
-          docker compose up -d
+          # Explicitly enable the 'infra' profile
+          docker compose --profile infra up -d
           echo "Waiting for services to start..."
           sleep 30
 
@@ -54,17 +55,20 @@ jobs:
         run: |
           docker compose ps
           
-          # Check if all services are running
+          # Check active services (infra profile has 5 services: postgres, redis, nats, nats-init, mosquitto)
+          # nats-init might exit 0, so we check valid running/exited state or just check core ones.
+          # Let's count running services.
           RUNNING=$(docker compose ps --services --filter "status=running" | wc -l)
+          # Expect at least postgres, redis, nats, mosquitto (4)
           EXPECTED=4
           
-          if [ "$RUNNING" -ne "$EXPECTED" ]; then
-            echo "❌ Expected $EXPECTED services running, but found $RUNNING"
+          if [ "$RUNNING" -lt "$EXPECTED" ]; then
+            echo "❌ Expected at least $EXPECTED services running, but found $RUNNING"
             docker compose logs
             exit 1
           fi
           
-          echo "✓ All $RUNNING services are running"
+          echo "✓ $RUNNING services are running"
 
       - name: Health check - PostgreSQL
         run: |
@@ -78,6 +82,7 @@ jobs:
 
       - name: Health check - NATS
         run: |
+          # Use the nats service container, or curl localhost:8222 if ports are mapped
           curl -f http://localhost:8222/healthz || exit 1
           echo "✓ NATS is ready"
 
@@ -97,4 +102,4 @@ jobs:
 
       - name: Cleanup
         if: always()
-        run: docker compose down -v
+        run: docker compose --profile infra down -v

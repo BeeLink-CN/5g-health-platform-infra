@@ -1,7 +1,9 @@
 version: '3.9'
 
 services:
+  # --- INFRASTRUCTURE SERVICES ---
   postgres:
+    profiles: [ "infra" ]
     image: timescale/timescaledb:latest-pg16
     container_name: 5g-platform-postgres
     command: [ "postgres", "-c", "shared_preload_libraries=timescaledb,pg_stat_statements" ]
@@ -26,6 +28,7 @@ services:
     restart: unless-stopped
 
   redis:
+    profiles: [ "infra" ]
     image: redis:7-alpine
     container_name: 5g-platform-redis
     command: redis-server --requirepass ${REDIS_PASSWORD:-redis_secret} --appendonly yes
@@ -44,6 +47,7 @@ services:
     restart: unless-stopped
 
   nats:
+    profiles: [ "infra" ]
     image: nats:2.10-alpine
     container_name: 5g-platform-nats
     command: "-c /etc/nats/nats.conf"
@@ -61,10 +65,39 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
-      start_period: 10s
+      start_period: 5s
     restart: unless-stopped
 
+  nats-init:
+    profiles: [ "infra" ]
+    image: natsio/nats-box:latest
+    container_name: 5g-platform-nats-init
+    depends_on:
+      nats:
+        condition: service_healthy
+    networks:
+      - 5g-platform-network
+    command:
+      - sh
+      - -c
+      - |
+        echo "Waiting for NATS..."
+        until nats stream ls -s nats://nats:4222 > /dev/null 2>&1; do sleep 1; done
+        echo "NATS Ready. Configuring streams..."
+        # Create 'events' stream idempontently
+        nats stream add events \
+          --subjects "vitals.recorded,patient.alert.raised,dispatch.created,dispatch.assigned" \
+          --storage file \
+          --retention limits \
+          --max-msgs 10000 \
+          --discard old \
+          --replicas 1 \
+          --no-confirm \
+          -s nats://nats:4222 || true
+        echo "Stream 'events' configured."
+
   mosquitto:
+    profiles: [ "infra" ]
     image: eclipse-mosquitto:2
     container_name: 5g-platform-mosquitto
     ports:
@@ -84,6 +117,70 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  # --- APPLICATION SERVICES ---
+  realtime-gateway:
+    profiles: [ "app" ]
+    container_name: 5g-platform-gateway
+    build:
+      context: ../5g-health-platform-realtime-gateway
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8080"
+    environment:
+      - NODE_ENV=development
+      - PORT=8080
+      - NATS_URL=nats://nats:4222
+      - CORS_ORIGIN=*
+      - CONTRACTS_PATH=/app/contracts
+    volumes:
+      # Mount contracts read-only
+      - ../5g-health-platform-contracts:/app/contracts:ro
+    depends_on:
+      nats:
+        condition: service_healthy
+    networks:
+      - 5g-platform-network
+    healthcheck:
+      test: [ "CMD", "wget", "-q", "-O", "-", "http://localhost:8080/health" ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  ingestion:
+    profiles: [ "app" ]
+    container_name: 5g-platform-ingestion
+    build:
+      context: ../5g-health-platform-ingestion
+      dockerfile: Dockerfile
+    environment:
+      - NODE_ENV=development
+      - NATS_URL=nats://nats:4222
+      - MQTT_URL=mqtt://mosquitto:1883
+    depends_on:
+      nats:
+        condition: service_healthy
+      mosquitto:
+        condition: service_healthy
+    networks:
+      - 5g-platform-network
+
+  dashboard:
+    profiles: [ "app" ]
+    container_name: 5g-platform-dashboard
+    build:
+      context: ../5g-health-platform-dashboard
+      dockerfile: ../5g-health-platform-infra/dashboard.Dockerfile
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_GATEWAY_WS=ws://localhost:8081/ws
+    networks:
+      - 5g-platform-network
+    depends_on:
+      realtime-gateway:
+        condition: service_started
+
 volumes:
   postgres_data:
     driver: local
@@ -98,4 +195,5 @@ volumes:
 
 networks:
   5g-platform-network:
+    name: 5g-platform-network
     driver: bridge

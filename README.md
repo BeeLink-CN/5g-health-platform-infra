@@ -1,32 +1,88 @@
-# 5G Health Platform - Infrastructure
-
-Local development infrastructure stack for the 5G Health Platform. This repository provides a single-command solution to boot all required dependencies for platform services.
+# 5G Health Platform Infrastructure
+Local development infrastructure for the 5G Health Platform. This repository provides a `docker-compose` setup to run the core infrastructure services (NATS, TimescaleDB, Redis, Mosquitto) and the application services (Gateway, Ingestion, Dashboard).
 
 [![Docker Compose Validation](../../actions/workflows/docker-compose-validation.yml/badge.svg)](../../actions/workflows/docker-compose-validation.yml)
 
-## 🎯 Overview
+## Quick Start
 
-This infrastructure stack includes:
+### Prerequisites
+- Docker & Docker Compose
+- Node.js 18+ (optional, for local development)
+- Make (optional, for convenience)
 
-- **PostgreSQL 16** with **TimescaleDB** extension for time-series data
-- **Redis 7** for caching and session management
-- **NATS** with **JetStream** for message streaming
-- **Mosquitto** (Eclipse) for MQTT messaging
+### One-Command Setup
 
-All services run in Docker containers with health checks, proper networking, and persistent volumes.
+Run the full demo (Infra + App):
 
-## 📋 Prerequisites
+```bash
+make demo
+# OR without make:
+docker compose --profile infra --profile app up -d --build
+```
 
-- **Docker** 24.0+ ([Install Docker](https://docs.docker.com/get-docker/))
-- **Docker Compose** 2.20+ (included with Docker Desktop)
-- **Make** (optional, for convenience commands)
-  - Windows: Install via [Chocolatey](https://chocolatey.org/) with `choco install make`
-  - macOS: Pre-installed or via Homebrew `brew install make`
-  - Linux: Usually pre-installed or `apt install make`
+Run infrastructure only (NATS, DB, etc.):
 
-## 🚀 Quick Start
+```bash
+make up
+# OR without make:
+docker compose --profile infra up -d
+```
 
-### 1. Clone and Configure
+Stop everything:
+
+```bash
+make down
+# OR without make:
+docker compose --profile infra --profile app down -v
+```
+
+## Architecture & Ports
+
+| Service            | Internal Port | Host Port | Description |
+|-------------------|---------------|-----------|-------------|
+| **Realtime Gateway** | 8080 | **8081** | HTTP/WebSocket API (`/health`, `/ws`) |
+| **Dashboard** | 5173 | **5173** | Web UI |
+| **NATS** | 4222 | **4222** | Core Message Broker (JetStream enabled) |
+| NATS Monitoring | 8222 | **8222** | NATS Management UI |
+| **TimescaleDB** | 5432 | **5432** | Time-series Database |
+| **Mosquitto** | 1883 | **1883** | MQTT Broker |
+| Redis | 6379 | **6379** | Cache (Optional) |
+
+## Services
+
+### Infrastructure (`profile: infra`)
+- **NATS**: Configuring with JetStream. Auto-creates the `events` stream with subjects: `vitals.recorded`, `patient.alert.raised`, `dispatch.created`, `dispatch.assigned`.
+- **TimescaleDB**: Stores sensor data.
+- **Mosquitto**: MQTT broker for edge devices.
+
+### Applications (`profile: app`)
+- **Realtime Gateway**: Node.js service connecting NATS/DB to frontend.
+- **Ingestion**: Simulates/Ingests sensor data.
+- **Dashboard**: React/Vite UI.
+
+## Troubleshooting
+
+### Port Conflicts
+- **8081**: The Gateway uses 8081 on the host to avoid conflict with common services on 8080 (like Apache/IIS).
+- **4222**: Ensure no local NATS server is running.
+
+### NATS Streams Missing
+The `nats-init` container attempts to create streams on startup. If you see errors about missing streams:
+1. Check logs: `docker compose logs nats-init`
+2. Manually create:
+   ```bash
+   docker exec -it 5g-platform-nats nats stream add events --subjects "vitals.recorded,patient.alert.raised,dispatch.created,dispatch.assigned" --storage file --retention limits --max-msgs 10000 --discard old --replicas 1 --no-confirm
+   ```
+
+### Rebuilding Services
+If you change code in the sibling repositories (`../5g-health-platform-realtime-gateway`, etc.), you must rebuild the containers:
+```bash
+docker compose --profile app build
+docker compose --profile app up -d
+```
+
+## Documentation
+See [docs/integration-runbook.md](docs/integration-runbook.md) for a step-by-step verification guide.
 
 ```bash
 git clone <repository-url>

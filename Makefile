@@ -1,46 +1,49 @@
-.PHONY: help up down logs ps restart reset health validate clean
+.PHONY: help up down logs ps restart reset health validate clean demo sanity-check
 
 help: ## Display this help message
 	@echo "5G Health Platform Infrastructure - Available Commands:"
 	@echo ""
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
-up: ## Start all services
-	@echo "Starting 5G Health Platform infrastructure..."
-	docker compose up -d
+up: ## Start INFRA services only (db, nats, mqtt)
+	@echo "Starting 5G Health Platform INFRAstructure..."
+	docker compose --profile infra up -d
 	@echo "Waiting for services to be healthy..."
 	@sleep 5
 	@$(MAKE) health
 
-down: ## Stop all services
-	@echo "Stopping 5G Health Platform infrastructure..."
-	docker compose down
+demo: ## Start ALL services (infra + app) for end-to-end demo
+	@echo "Starting 5G Health Platform FULL DEMO..."
+	docker compose --profile infra --profile app up -d --build
+	@echo "Waiting for services to be healthy..."
+	@sleep 10
+	@$(MAKE) health
+	@echo "Dashboard available at http://localhost:5173"
+	@echo "Gateway available at http://localhost:8081"
 
-logs: ## Show logs from all services (follow mode)
-	docker compose logs -f
+down: ## Stop all services and remove volumes
+	@echo "Stopping 5G Health Platform..."
+	docker compose --profile infra --profile app down -v
+
+logs: ## Show logs from all services (follow mode, tail 200)
+	docker compose logs -f --tail=200
 
 ps: ## Show status of all services
-	docker compose ps
+	docker compose ps -a
 
 restart: ## Restart all services
-	@echo "Restarting 5G Health Platform infrastructure..."
+	@echo "Restarting..."
 	docker compose restart
 	@sleep 5
 	@$(MAKE) health
 
-reset: ## Stop services, remove volumes, and start fresh
-	@echo "⚠️  WARNING: This will delete all data in volumes!"
-	@echo "Press Ctrl+C within 5 seconds to cancel..."
-	@sleep 5
-	docker compose down -v
-	docker compose up -d
-	@echo "Waiting for services to be healthy..."
-	@sleep 5
-	@$(MAKE) health
+health: ## Check status of containers
+	@echo "Checking containers..."
+	@docker compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}"
 
-health: ## Check health status of all services
-	@echo "Checking service health..."
-	@docker compose ps --format "table {{.Name}}\t{{.Status}}"
+sanity-check: ## Run curl checks against Gateway
+	@echo "Running sanity check against Gateway (http://localhost:8081)..."
+	@curl -s http://localhost:8081/health | grep "OK" && echo "✅ Gateway /health OK" || echo "❌ Gateway /health FAILED"
 
 validate: ## Validate docker-compose.yml configuration
 	@echo "Validating docker-compose configuration..."
@@ -55,11 +58,12 @@ clean: ## Remove stopped containers and dangling images
 logs-postgres: ## Show PostgreSQL logs
 	docker compose logs -f postgres
 
-logs-redis: ## Show Redis logs
-	docker compose logs -f redis
-
 logs-nats: ## Show NATS logs
 	docker compose logs -f nats
 
-logs-mqtt: ## Show Mosquitto logs
-	docker compose logs -f mosquitto
+logs-gateway: ## Show Gateway logs
+	docker compose logs -f realtime-gateway
+
+logs-ingestion: ## Show Ingestion logs
+	docker compose logs -f ingestion
+

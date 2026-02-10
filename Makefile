@@ -41,9 +41,12 @@ health: ## Check status of containers
 	@echo "Checking containers..."
 	@docker compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}"
 
-sanity-check: ## Run curl checks against Gateway
+sanity-check: ## Run curl checks against Gateway and AI Triage
 	@echo "Running sanity check against Gateway (http://localhost:8081)..."
 	@curl -s http://localhost:8081/health | grep "OK" && echo "✅ Gateway /health OK" || echo "❌ Gateway /health FAILED"
+	@echo "Running sanity check against AI Triage (http://localhost:8092)..."
+	@curl -s http://localhost:8092/health | grep "OK" && echo "✅ AI Triage /health OK" || echo "❌ AI Triage /health FAILED"
+
 
 validate: ## Validate docker-compose.yml configuration
 	@echo "Validating docker-compose configuration..."

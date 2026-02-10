@@ -163,6 +163,34 @@ services:
     networks:
       - 5g-platform-network
 
+  ai-triage:
+    profiles: [ "app" ]
+    container_name: 5g-platform-ai-triage
+    build:
+      context: ../5g-health-platform-ai-triage
+      dockerfile: Dockerfile
+    ports:
+      - "8092:8092"
+    environment:
+      - NODE_ENV=development
+      - HTTP_PORT=8092
+      - NATS_URL=nats://nats:4222
+      - CONTRACTS_PATH=/app/contracts
+    volumes:
+      # Mount contracts read-only
+      - ../5g-health-platform-contracts/schemas:/app/contracts:ro
+    depends_on:
+      nats:
+        condition: service_healthy
+    networks:
+      - 5g-platform-network
+    healthcheck:
+      test: [ "CMD", "wget", "-q", "-O", "-", "http://localhost:8092/health" ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
   dashboard:
     profiles: [ "app" ]
     container_name: 5g-platform-dashboard

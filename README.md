@@ -41,6 +41,7 @@ docker compose --profile infra --profile app down -v
 | Service            | Internal Port | Host Port | Description |
 |-------------------|---------------|-----------|-------------|
 | **Realtime Gateway** | 8080 | **8081** | HTTP/WebSocket API (`/health`, `/ws`) |
+| **AI Triage** | 8092 | **8092** | AI-powered patient triage service (`/health`) |
 | **Dashboard** | 5173 | **5173** | Web UI |
 | **NATS** | 4222 | **4222** | Core Message Broker (JetStream enabled) |
 | NATS Monitoring | 8222 | **8222** | NATS Management UI |
@@ -58,6 +59,7 @@ docker compose --profile infra --profile app down -v
 ### Applications (`profile: app`)
 - **Realtime Gateway**: Node.js service connecting NATS/DB to frontend.
 - **Ingestion**: Simulates/Ingests sensor data.
+- **AI Triage**: Consumes vitals events from NATS, evaluates patient conditions, and publishes alerts.
 - **Dashboard**: React/Vite UI.
 
 ## Troubleshooting
